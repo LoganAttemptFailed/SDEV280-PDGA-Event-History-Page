@@ -17,6 +17,129 @@ import { processTierData } from "./functions/functions.js";
 let allData = [];
 let originalData = []; // Store original unfiltered data
 
+// Sorting state
+let currentSortColumn = null;
+let currentSortDirection = 'asc';
+
+// --------------------------------------------------------------------------------------------------------------------------
+//
+//                                               SORTING FUNCTIONS
+//
+// --------------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Initializes sort functionality for table headers
+ */
+function initializeTableSort() {
+  const tableHeaders = document.querySelectorAll('th[data-sort]');
+  
+  tableHeaders.forEach(header => {
+    header.addEventListener('click', () => {
+      const sortKey = header.getAttribute('data-sort');
+      handleSort(sortKey);
+      updateSortIndicators(header);
+    });
+  });
+}
+
+/**
+ * Handles the sorting logic
+ */
+function handleSort(sortKey) {
+  // Toggle sort direction if clicking the same column
+  if (currentSortColumn === sortKey) {
+    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortColumn = sortKey;
+    currentSortDirection = 'asc';
+  }
+  
+  // Sort the entire allData array
+  allData = sortData(allData);
+  
+  // Re-initialize pagination with sorted data
+  initPagination(allData, renderTable);
+}
+
+/**
+ * Updates visual indicators on table headers
+ */
+function updateSortIndicators(activeHeader) {
+  // Remove sort classes from all headers
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  
+  // Add appropriate class to active header
+  if (currentSortDirection === 'asc') {
+    activeHeader.classList.add('sort-asc');
+  } else {
+    activeHeader.classList.add('sort-desc');
+  }
+}
+
+/**
+ * Sorts an array of events based on current sort settings
+ */
+function sortData(data) {
+  if (!currentSortColumn || !data || data.length === 0) {
+    return data;
+  }
+  
+  return [...data].sort((a, b) => {
+    let aVal = a[currentSortColumn];
+    let bVal = b[currentSortColumn];
+    
+    // Handle special cases
+    switch (currentSortColumn) {
+      case 'start_date':
+        // Convert to Date objects for proper date comparison
+        aVal = new Date(aVal || '1900-01-01');
+        bVal = new Date(bVal || '1900-01-01');
+        break;
+        
+      case 'tier':
+        // Define tier hierarchy for disc golf (highest to lowest)
+        const tierOrder = {
+          'Major': 1,
+          'Elite': 2,
+          'Tier-A': 3,
+          'Tier-B': 4,
+          'Tier-C': 5,
+          'Tier-XA': 6,
+          'Tier-XB': 7,
+          'Tier-XC': 8,
+          'Tier-XM': 9
+        };
+        
+        // Get tier values, default to 999 for unknown tiers
+        aVal = tierOrder[a.tier] || 999;
+        bVal = tierOrder[b.tier] || 999;
+        break;
+        
+      default:
+        // Handle null/undefined values
+        aVal = aVal || '';
+        bVal = bVal || '';
+        
+        // Convert to lowercase for case-insensitive string comparison
+        if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+        if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+    }
+    
+    // Compare values
+    let comparison = 0;
+    if (aVal > bVal) {
+      comparison = 1;
+    } else if (aVal < bVal) {
+      comparison = -1;
+    }
+    
+    // Apply sort direction
+    return currentSortDirection === 'asc' ? comparison : -comparison;
+  });
+}
+
 // --------------------------------------------------------------------------------------------------------------------------
 //
 //                                               LOAD DATA
@@ -38,10 +161,16 @@ let originalData = []; // Store original unfiltered data
         allEventsDetails.forEach(event => {
             const newId = allEventsId.find(e => e.pdga_event_id === event.pdga_event_id)?.id || null;
             const newName = allEventsId.find(e => e.pdga_event_id === event.pdga_event_id)?.name || null;
+            
+            // Process tier data for all events upfront
+            const { tier, tierCode } = processTierData(event);
+            
             allEventsData.push({
                 ...event,
                 id: newId,
-                name: newName
+                name: newName,
+                tier: tier,
+                tierCode: tierCode
             });
         });
 
@@ -84,6 +213,11 @@ let originalData = []; // Store original unfiltered data
             
             // Perform search
             performSearch(searchQuery);
+            
+            // Initialize table sorting after search
+            setTimeout(() => {
+                initializeTableSort();
+            }, 100);
         } else {
             console.log('No search query, redirecting to index.html');
             window.location.href = 'index.html';
@@ -204,6 +338,9 @@ function renderTable() {
     const currentPageData = pageDataObj.data;
     console.log('Current page data length:', currentPageData.length);
 
+    // Data is already sorted in allData, no need to sort again here
+    console.log('Using pre-sorted data from allData');
+
     // Clear existing rows - make sure table is completely empty
     tableBody.innerHTML = '';
     console.log('Table cleared');
@@ -237,23 +374,22 @@ function renderTable() {
     currentPageData.forEach((item, index) => {
         console.log(`Processing item ${index}:`, item.name);
         
-        const processedItem = processTierData(item);
-        
+        // Tier data already processed, just use the item directly
         const row = document.createElement('tr');
         row.style.cursor = 'pointer';
         row.innerHTML = `
-            <td>${processedItem.name || 'N/A'}</td>
-            <td>${processedItem.start_date || 'N/A'}</td>
-            <td><span class="tier-badge ${processedItem.tierCode || ''}">${processedItem.tier || 'N/A'}</span></td>
-            <td>${processedItem.city || 'N/A'}</td>
-            <td>${processedItem.state || 'N/A'}</td>
-            <td>${processedItem.country || 'N/A'}</td>
+            <td>${item.name || 'N/A'}</td>
+            <td>${item.start_date || 'N/A'}</td>
+            <td><span class="tier-badge ${item.tierCode || ''}">${item.tier || 'N/A'}</span></td>
+            <td>${item.city || 'N/A'}</td>
+            <td>${item.state || 'N/A'}</td>
+            <td>${item.country || 'N/A'}</td>
         `;
         
         row.addEventListener('click', () => {
-            selectedEvent = processedItem;
-            continualId = processedItem.id;
-            console.log('Event clicked:', processedItem.name);
+            selectedEvent = item;
+            continualId = item.id;
+            console.log('Event clicked:', item.name);
         });
         
         tableBody.appendChild(row);

@@ -853,3 +853,41 @@ tbody tr.empty-row:hover::before {
   transform: scale(1.00);
   cursor: initial;
 }
+
+/* Sortable Table Headers */
+thead th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 25px;
+}
+
+thead th[data-sort]:hover {
+  background-color: #0052a3;
+}
+
+.sort-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.sort-indicator::before {
+  content: "▼▲";
+  letter-spacing: -2px;
+}
+
+th[data-sort].sort-asc .sort-indicator::before {
+  content: "▲";
+  opacity: 1;
+  font-size: 12px;
+}
+
+th[data-sort].sort-desc .sort-indicator::before {
+  content: "▼";
+  opacity: 1;
+  font-size: 12px;
+}

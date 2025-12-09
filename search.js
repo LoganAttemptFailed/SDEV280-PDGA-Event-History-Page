@@ -214,9 +214,10 @@ function sortData(data) {
             // Perform search
             performSearch(searchQuery);
             
-            // Initialize table sorting after search
+            // Initialize table sorting and suggestions after search
             setTimeout(() => {
                 initializeTableSort();
+                initializeSuggestions();
             }, 100);
         } else {
             console.log('No search query, redirecting to index.html');
@@ -226,6 +227,284 @@ function sortData(data) {
         console.error('Error loading data:', error);
     }
 })();
+
+// --------------------------------------------------------------------------------------------------------------------------
+//
+//                                               SEARCH SUGGESTIONS
+//
+// --------------------------------------------------------------------------------------------------------------------------
+
+let suggestionIndex = -1;
+let currentSuggestions = [];
+
+/**
+ * Calculate similarity score between query and text
+ * Returns a score from 0-100
+ */
+function calculateSimilarity(text, query) {
+    if (!text || !query) return 0;
+    
+    const textLower = text.toLowerCase();
+    const queryLower = query.toLowerCase();
+    
+    let score = 0;
+    
+    // Exact match
+    if (textLower === queryLower) return 100;
+    
+    // Starts with query
+    if (textLower.startsWith(queryLower)) score += 50;
+    
+    // Contains query
+    if (textLower.includes(queryLower)) score += 30;
+    
+    // Word boundary match
+    const words = textLower.split(/\s+/);
+    if (words.some(word => word.startsWith(queryLower))) score += 20;
+    
+    // Acronym match
+    const acronym = words.map(w => w.charAt(0)).join('');
+    if (acronym.includes(queryLower.replace(/\s+/g, ''))) score += 15;
+    
+    // Fuzzy match (character overlap)
+    let matches = 0;
+    for (let char of queryLower) {
+        if (textLower.includes(char)) matches++;
+    }
+    score += (matches / queryLower.length) * 10;
+    
+    return Math.min(score, 100);
+}
+
+/**
+ * Generate search suggestions based on input
+ */
+function generateSuggestions(query, limit = 8) {
+    if (!query || query.trim().length < 2) {
+        return [];
+    }
+    
+    const queryTrimmed = query.trim();
+    
+    // Score all events
+    const scoredEvents = originalData.map(event => {
+        const nameScore = calculateSimilarity(event.name, queryTrimmed);
+        const eventNameScore = calculateSimilarity(event.event_name, queryTrimmed);
+        const cityScore = calculateSimilarity(event.city, queryTrimmed) * 0.5;
+        const stateScore = calculateSimilarity(event.state, queryTrimmed) * 0.5;
+        const tierScore = calculateSimilarity(event.tier, queryTrimmed) * 0.3;
+        
+        const maxScore = Math.max(nameScore, eventNameScore, cityScore, stateScore, tierScore);
+        
+        return {
+            event,
+            score: maxScore,
+            matchField: nameScore >= eventNameScore ? 'name' : 'event_name'
+        };
+    });
+    
+    // Filter and sort by score
+    const suggestions = scoredEvents
+        .filter(item => item.score > 10)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    
+    return suggestions;
+}
+
+/**
+ * Highlight matching parts of text
+ */
+function highlightMatch(text, query) {
+    if (!text || !query) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, '<span class="suggestion-match">$1</span>');
+}
+
+/**
+ * Display search suggestions
+ */
+function displaySuggestions(query) {
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    
+    if (!suggestionsContainer) {
+        console.error('Suggestions container not found');
+        return;
+    }
+    
+    if (!query || query.trim().length < 2) {
+        suggestionsContainer.classList.remove('active');
+        suggestionsContainer.innerHTML = '';
+        currentSuggestions = [];
+        return;
+    }
+    
+    const suggestions = generateSuggestions(query);
+    currentSuggestions = suggestions;
+    suggestionIndex = -1;
+    
+    if (suggestions.length === 0) {
+        suggestionsContainer.innerHTML = '<div class="no-suggestions">No suggestions found</div>';
+        suggestionsContainer.classList.add('active');
+        return;
+    }
+    
+    const suggestionsHTML = suggestions.map((item, index) => {
+        const event = item.event;
+        const displayName = event[item.matchField] || event.name;
+        const highlightedName = highlightMatch(displayName, query);
+        
+        return `
+            <div class="suggestion-item" data-index="${index}">
+                <div class="suggestion-name">${highlightedName}</div>
+                <div class="suggestion-meta">
+                    ${event.start_date} • ${event.tier} • ${event.city}, ${event.state || event.country}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    suggestionsContainer.innerHTML = suggestionsHTML;
+    suggestionsContainer.classList.add('active');
+    
+    // Add click handlers
+    suggestionsContainer.querySelectorAll('.suggestion-item').forEach((item, index) => {
+        item.addEventListener('click', () => {
+            selectSuggestion(index);
+        });
+    });
+}
+
+/**
+ * Select a suggestion
+ */
+function selectSuggestion(index) {
+    if (index < 0 || index >= currentSuggestions.length) return;
+    
+    const suggestion = currentSuggestions[index];
+    const event = suggestion.event;
+    const displayName = event[suggestion.matchField] || event.name;
+    
+    // Helper: show navigation spinner overlay
+    function showNavSpinner() {
+        const spinner = document.getElementById('navSpinner');
+        if (!spinner) return;
+        spinner.classList.remove('hidden');
+        // allow browser to paint the overlay before navigation
+    }
+
+    // If the event has an `id` (continual/main id), navigate back to main page
+    if (event && (event.id || event.id === 0)) {
+        try {
+            sessionStorage.setItem('selectedId', event.id);
+        } catch (e) {
+            console.warn('Unable to set sessionStorage selectedId', e);
+        }
+
+        // Show a small loading overlay so user sees feedback, then navigate
+        showNavSpinner();
+        // short delay to ensure overlay is painted
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 80);
+        return;
+    }
+
+    // Fallback: populate the input and perform a regular search if no id present
+    searchInput.value = displayName;
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    suggestionsContainer.classList.remove('active');
+    searchForm.dispatchEvent(new Event('submit'));
+}
+
+/**
+ * Navigate suggestions with keyboard
+ */
+function navigateSuggestions(direction) {
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    const items = suggestionsContainer.querySelectorAll('.suggestion-item');
+    
+    if (items.length === 0) return;
+    
+    // Remove previous highlight
+    if (suggestionIndex >= 0 && suggestionIndex < items.length) {
+        items[suggestionIndex].classList.remove('highlighted');
+    }
+    
+    // Update index
+    if (direction === 'down') {
+        suggestionIndex = (suggestionIndex + 1) % items.length;
+    } else if (direction === 'up') {
+        suggestionIndex = suggestionIndex <= 0 ? items.length - 1 : suggestionIndex - 1;
+    }
+    
+    // Add new highlight
+    if (suggestionIndex >= 0 && suggestionIndex < items.length) {
+        items[suggestionIndex].classList.add('highlighted');
+        items[suggestionIndex].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+/**
+ * Initialize suggestion functionality
+ */
+function initializeSuggestions() {
+    if (!searchInput) return;
+    
+    // Show suggestions on input
+    searchInput.addEventListener('input', (e) => {
+        displaySuggestions(e.target.value);
+    });
+    
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', (e) => {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        const isActive = suggestionsContainer.classList.contains('active');
+        
+        if (!isActive) return;
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                navigateSuggestions('down');
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                navigateSuggestions('up');
+                break;
+                
+            case 'Enter':
+                if (suggestionIndex >= 0) {
+                    e.preventDefault();
+                    selectSuggestion(suggestionIndex);
+                }
+                break;
+                
+            case 'Escape':
+                suggestionsContainer.classList.remove('active');
+                break;
+        }
+    });
+    
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        if (!searchForm.contains(e.target)) {
+            suggestionsContainer.classList.remove('active');
+        }
+    });
+    
+    // Show suggestions when focusing on input with existing value
+    searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim().length >= 2) {
+            displaySuggestions(searchInput.value);
+        }
+    });
+}
+
+// Initialize suggestions after data is loaded
 
 // --------------------------------------------------------------------------------------------------------------------------
 //
@@ -262,70 +541,101 @@ function performSearch(query) {
         return;
     }
     
-    // Helper function to check if query matches acronym of text
+    /**
+     * Check if query matches acronym of text (space-separated words only)
+     * Example: "pdgwc" matches "Professional Disc Golf World Championships"
+     */
     function matchesAcronym(text, query) {
-        if (!text) return false;
+        if (!text || !query) return false;
         
-        // Remove special characters and extra spaces
-        const cleanQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+        const cleanQuery = query.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
         const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
         
-        // Split query by spaces or treat as continuous letters
-        const queryParts = query.includes(' ') 
-            ? cleanQuery.split(/\s+/) 
-            : cleanQuery.split('');
+        if (!cleanQuery || !cleanText) return false;
         
-        // Get first letters of each word in the text
+        // Get first letter of each word
         const textWords = cleanText.split(/\s+/);
         const textAcronym = textWords.map(word => word.charAt(0)).join('');
         
-        // Check if query matches the acronym
-        if (queryParts.join('') === textAcronym) {
-            return true;
-        }
+        // Try exact match
+        if (cleanQuery === textAcronym) return true;
         
-        // Also check if query parts match the start of consecutive words
-        if (queryParts.length > 1) {
-            let matchIndex = 0;
-            for (let i = 0; i < textWords.length && matchIndex < queryParts.length; i++) {
-                if (textWords[i].startsWith(queryParts[matchIndex])) {
-                    matchIndex++;
-                }
-            }
-            return matchIndex === queryParts.length;
-        }
-        
-        return false;
+        // Try substring match (e.g., "dg" matches "Disc Golf" in "Professional Disc Golf...")
+        return textAcronym.includes(cleanQuery);
     }
     
-    // Helper function to check standard text matching
+    /**
+     * Check if text contains query substring
+     */
     function matchesText(text, query) {
-        if (!text) return false;
+        if (!text || !query) return false;
         return text.toLowerCase().includes(query.toLowerCase());
     }
     
-    const searchQuery = query.trim();
+    /**
+     * Check if text is a number and matches query
+     */
+    function matchesNumber(text, query) {
+        if (!text || !query) return false;
+        return String(text).includes(query);
+    }
     
-    // Filter the data based on the query
-    const filteredData = originalData.filter(event => {
-        // Check standard text matching first
-        const standardMatch = 
-            matchesText(event.name, searchQuery) ||
-            matchesText(event.event_name, searchQuery) ||
-            matchesText(event.city, searchQuery) ||
-            matchesText(event.state, searchQuery) ||
-            matchesText(event.country, searchQuery) ||
-            matchesText(event.tier, searchQuery);
+    /**
+     * Score an event based on how well it matches the query
+     * Higher score = better match. Returns 0 if no match.
+     */
+    function scoreEvent(event, searchQuery) {
+        let score = 0;
+        const lowerQuery = searchQuery.toLowerCase();
         
-        if (standardMatch) return true;
+        // Exact name match (highest priority)
+        if (event.name?.toLowerCase() === lowerQuery) score += 100;
+        else if (event.event_name?.toLowerCase() === lowerQuery) score += 100;
+        // Name starts with query
+        else if (event.name?.toLowerCase().startsWith(lowerQuery)) score += 80;
+        else if (event.event_name?.toLowerCase().startsWith(lowerQuery)) score += 80;
+        // Name contains query
+        else if (matchesText(event.name, searchQuery)) score += 60;
+        else if (matchesText(event.event_name, searchQuery)) score += 60;
+        // Acronym match
+        else if (matchesAcronym(event.name, searchQuery)) score += 50;
+        else if (matchesAcronym(event.event_name, searchQuery)) score += 50;
         
-        // Check acronym matching
-        const acronymMatch = 
-            matchesAcronym(event.name, searchQuery) ||
-            matchesAcronym(event.event_name, searchQuery);
+        // Secondary field matches (lower priority)
+        if (score > 0) {
+            // Boost if location also matches
+            if (matchesText(event.city, searchQuery)) score += 5;
+            if (matchesText(event.state, searchQuery)) score += 5;
+            if (matchesText(event.country, searchQuery)) score += 5;
+            return score;
+        }
         
-        return acronymMatch;
-    });
+        // Location matches
+        if (matchesText(event.city, searchQuery)) score += 30;
+        if (matchesText(event.state, searchQuery)) score += 30;
+        if (matchesText(event.country, searchQuery)) score += 30;
+        
+        // Tier matches
+        if (matchesText(event.tier, searchQuery)) score += 20;
+        
+        // PDGA number matches
+        if (matchesNumber(event.pdga_number, searchQuery)) score += 40;
+        
+        return score;
+    }
+    
+    const searchQuery = query;
+    
+    // Score and filter the data based on the query
+    const scoredEvents = originalData
+        .map(event => ({
+            event,
+            score: scoreEvent(event, searchQuery)
+        }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score); // Sort by score descending
+    
+    const filteredData = scoredEvents.map(item => item.event);
     
     console.log(`Search results for "${query}":`, filteredData.length, 'events');
     

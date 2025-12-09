@@ -187,6 +187,9 @@ const eventDivisionsMap = new Map();
 
   activateVizSelectionBtn();
   activateBackToAllEventsBtn();
+
+  // Initialize search suggestions for main page
+  initializeMainPageSuggestions();
 })();
 
 // --------------------------------------------------------------------------------------------------------------------------
@@ -557,3 +560,262 @@ export function getFinalEventsResult() {
 export function getSelectedEventResult() {
   return selectedEventsResult;
 };
+
+// --------------------------------------------------------------------------------------------------------------------------
+//
+//                                               SEARCH SUGGESTIONS FOR MAIN PAGE
+//
+// --------------------------------------------------------------------------------------------------------------------------
+
+let suggestionIndex = -1;
+let currentSuggestions = [];
+
+/**
+ * Calculate similarity score between query and text
+ * Returns a score from 0-100
+ */
+function calculateSimilarity(text, query) {
+    if (!text || !query) return 0;
+    
+    const textLower = text.toLowerCase();
+    const queryLower = query.toLowerCase();
+    
+    let score = 0;
+    
+    // Exact match
+    if (textLower === queryLower) return 100;
+    
+    // Starts with query
+    if (textLower.startsWith(queryLower)) score += 50;
+    
+    // Contains query
+    if (textLower.includes(queryLower)) score += 30;
+    
+    // Word boundary match
+    const words = textLower.split(/\s+/);
+    if (words.some(word => word.startsWith(queryLower))) score += 20;
+    
+    // Acronym match
+    const acronym = words.map(w => w.charAt(0)).join('');
+    if (acronym.includes(queryLower.replace(/\s+/g, ''))) score += 15;
+    
+    // Fuzzy match (character overlap)
+    let matches = 0;
+    for (let char of queryLower) {
+        if (textLower.includes(char)) matches++;
+    }
+    score += (matches / queryLower.length) * 10;
+    
+    return Math.min(score, 100);
+}
+
+/**
+ * Generate search suggestions based on input
+ */
+function generateMainPageSuggestions(query, limit = 8) {
+    if (!query || query.trim().length < 2) {
+        return [];
+    }
+    
+    const queryTrimmed = query.trim();
+    const allEventsArray = [];
+    
+    // Convert allEventsMap to flat array for searching
+    allEventsMap.forEach(events => {
+        allEventsArray.push(...events);
+    });
+    
+    // Score all events
+    const scoredEvents = allEventsArray.map(event => {
+        const nameScore = calculateSimilarity(event.name, queryTrimmed);
+        const eventNameScore = calculateSimilarity(event.event_name, queryTrimmed);
+        const cityScore = calculateSimilarity(event.city, queryTrimmed) * 0.5;
+        const stateScore = calculateSimilarity(event.state, queryTrimmed) * 0.5;
+        const tierScore = calculateSimilarity(event.tier, queryTrimmed) * 0.3;
+        
+        const maxScore = Math.max(nameScore, eventNameScore, cityScore, stateScore, tierScore);
+        
+        return {
+            event,
+            score: maxScore,
+            matchField: nameScore >= eventNameScore ? 'name' : 'event_name'
+        };
+    });
+    
+    // Filter and sort by score
+    const suggestions = scoredEvents
+        .filter(item => item.score > 10)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    
+    return suggestions;
+}
+
+/**
+ * Highlight matching parts of text
+ */
+function highlightMatch(text, query) {
+    if (!text || !query) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, '<span class="suggestion-match">$1</span>');
+}
+
+/**
+ * Display search suggestions on main page
+ */
+function displayMainPageSuggestions(query) {
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    
+    if (!suggestionsContainer) {
+        return;
+    }
+    
+    if (!query || query.trim().length < 2) {
+        suggestionsContainer.classList.remove('active');
+        suggestionsContainer.innerHTML = '';
+        currentSuggestions = [];
+        return;
+    }
+    
+    const suggestions = generateMainPageSuggestions(query);
+    currentSuggestions = suggestions;
+    suggestionIndex = -1;
+    
+    if (suggestions.length === 0) {
+        suggestionsContainer.innerHTML = '<div class="no-suggestions">No suggestions found</div>';
+        suggestionsContainer.classList.add('active');
+        return;
+    }
+    
+    const suggestionsHTML = suggestions.map((item, index) => {
+        const event = item.event;
+        const displayName = event[item.matchField] || event.name;
+        const highlightedName = highlightMatch(displayName, query);
+        
+        return `
+            <div class="suggestion-item" data-index="${index}">
+                <div class="suggestion-name">${highlightedName}</div>
+                <div class="suggestion-meta">
+                    ${event.start_date} • ${event.tier} • ${event.city}, ${event.state || event.country}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    suggestionsContainer.innerHTML = suggestionsHTML;
+    suggestionsContainer.classList.add('active');
+    
+    // Add click handlers
+    suggestionsContainer.querySelectorAll('.suggestion-item').forEach((item, index) => {
+        item.addEventListener('click', () => {
+            selectMainPageSuggestion(index);
+        });
+    });
+}
+
+/**
+ * Select a suggestion and navigate to event
+ */
+function selectMainPageSuggestion(index) {
+    if (index < 0 || index >= currentSuggestions.length) return;
+    
+    const suggestion = currentSuggestions[index];
+    const event = suggestion.event;
+    
+    // Close suggestions
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    suggestionsContainer.classList.remove('active');
+    
+    // Navigate to event
+    handleEventClick(event);
+}
+
+/**
+ * Navigate suggestions with keyboard
+ */
+function navigateMainPageSuggestions(direction) {
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    const items = suggestionsContainer.querySelectorAll('.suggestion-item');
+    
+    if (items.length === 0) return;
+    
+    // Remove previous highlight
+    if (suggestionIndex >= 0 && suggestionIndex < items.length) {
+        items[suggestionIndex].classList.remove('highlighted');
+    }
+    
+    // Update index
+    if (direction === 'down') {
+        suggestionIndex = (suggestionIndex + 1) % items.length;
+    } else if (direction === 'up') {
+        suggestionIndex = suggestionIndex <= 0 ? items.length - 1 : suggestionIndex - 1;
+    }
+    
+    // Add new highlight
+    if (suggestionIndex >= 0 && suggestionIndex < items.length) {
+        items[suggestionIndex].classList.add('highlighted');
+        items[suggestionIndex].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+/**
+ * Initialize suggestion functionality for main page
+ */
+function initializeMainPageSuggestions() {
+    const searchInput = document.getElementById('searchInput');
+    const searchForm = document.getElementById('searchForm');
+    
+    if (!searchInput || !searchForm) return;
+    
+    // Show suggestions on input
+    searchInput.addEventListener('input', (e) => {
+        displayMainPageSuggestions(e.target.value);
+    });
+    
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', (e) => {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        const isActive = suggestionsContainer.classList.contains('active');
+        
+        if (!isActive) return;
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                navigateMainPageSuggestions('down');
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                navigateMainPageSuggestions('up');
+                break;
+                
+            case 'Enter':
+                if (suggestionIndex >= 0) {
+                    e.preventDefault();
+                    selectMainPageSuggestion(suggestionIndex);
+                }
+                break;
+                
+            case 'Escape':
+                suggestionsContainer.classList.remove('active');
+                break;
+        }
+    });
+    
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        if (!searchForm.contains(e.target)) {
+            suggestionsContainer.classList.remove('active');
+        }
+    });
+    
+    // Show suggestions when focusing on input with existing value
+    searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim().length >= 2) {
+            displayMainPageSuggestions(searchInput.value);
+        }
+    });
+}

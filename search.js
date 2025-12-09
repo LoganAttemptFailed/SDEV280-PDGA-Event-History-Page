@@ -262,17 +262,69 @@ function performSearch(query) {
         return;
     }
     
+    // Helper function to check if query matches acronym of text
+    function matchesAcronym(text, query) {
+        if (!text) return false;
+        
+        // Remove special characters and extra spaces
+        const cleanQuery = query.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+        const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+        
+        // Split query by spaces or treat as continuous letters
+        const queryParts = query.includes(' ') 
+            ? cleanQuery.split(/\s+/) 
+            : cleanQuery.split('');
+        
+        // Get first letters of each word in the text
+        const textWords = cleanText.split(/\s+/);
+        const textAcronym = textWords.map(word => word.charAt(0)).join('');
+        
+        // Check if query matches the acronym
+        if (queryParts.join('') === textAcronym) {
+            return true;
+        }
+        
+        // Also check if query parts match the start of consecutive words
+        if (queryParts.length > 1) {
+            let matchIndex = 0;
+            for (let i = 0; i < textWords.length && matchIndex < queryParts.length; i++) {
+                if (textWords[i].startsWith(queryParts[matchIndex])) {
+                    matchIndex++;
+                }
+            }
+            return matchIndex === queryParts.length;
+        }
+        
+        return false;
+    }
+    
+    // Helper function to check standard text matching
+    function matchesText(text, query) {
+        if (!text) return false;
+        return text.toLowerCase().includes(query.toLowerCase());
+    }
+    
+    const searchQuery = query.trim();
+    
     // Filter the data based on the query
     const filteredData = originalData.filter(event => {
-        const searchQuery = query.toLowerCase();
-        return (
-            (event.name && event.name.toLowerCase().includes(searchQuery)) ||
-            (event.event_name && event.event_name.toLowerCase().includes(searchQuery)) ||
-            (event.city && event.city.toLowerCase().includes(searchQuery)) ||
-            (event.state && event.state.toLowerCase().includes(searchQuery)) ||
-            (event.country && event.country.toLowerCase().includes(searchQuery)) ||
-            (event.tier && event.tier.toLowerCase().includes(searchQuery))
-        );
+        // Check standard text matching first
+        const standardMatch = 
+            matchesText(event.name, searchQuery) ||
+            matchesText(event.event_name, searchQuery) ||
+            matchesText(event.city, searchQuery) ||
+            matchesText(event.state, searchQuery) ||
+            matchesText(event.country, searchQuery) ||
+            matchesText(event.tier, searchQuery);
+        
+        if (standardMatch) return true;
+        
+        // Check acronym matching
+        const acronymMatch = 
+            matchesAcronym(event.name, searchQuery) ||
+            matchesAcronym(event.event_name, searchQuery);
+        
+        return acronymMatch;
     });
     
     console.log(`Search results for "${query}":`, filteredData.length, 'events');
@@ -289,6 +341,10 @@ function performSearch(query) {
     // Update allData with filtered results
     allData = filteredData;
     console.log('Updated allData with filtered results');
+    
+    // Reset sorting state when performing new search
+    currentSortColumn = null;
+    currentSortDirection = 'asc';
     
     // Initialize pagination with filtered data (pageSize is 10 by default in pagination.js)
     console.log('Calling initPagination...');

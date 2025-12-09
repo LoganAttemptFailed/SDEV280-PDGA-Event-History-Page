@@ -3,9 +3,7 @@ import {
   getAllEventsDetails,
   getParticipantsAndPrizesPerYearByPdgaEventIds,
   clearTable,
-  createClickableRow,
   activateBackToAllEventsBtn,
-  initPagination,
   processTierData,
   sortingEventsByDate,
   renderEventDetails,
@@ -18,20 +16,24 @@ import {
   getEventsResultByPdgaEventIds,
   getPlayersByPdgaNumbers,
   renderDivisionsWinner,
+  renderHighestRoundRating,
+  renderTop5DivisionsRating,
   sortDivisions,
-  sortTiers,
+  renderFieldSizeBoxplot,
   getUniqueEventDivisions,
   customTierOrder,
   deepCopyMapOfObjects,
+  activateDivisionWinnerCardSelection,
+  processWinterTimeOpenEvents,
+  processNorthwestDgcEvents
 } from "./functions/index.js";
 
-const allEventsData = [];
-const allEventsMap = new Map();
+let allEventsMap = new Map();
 const mainEventsObj = {};
-let recentEventsList = [];
 let selectedEvent;
 let selectedEventsResult = [];
 let pastEventsList = [];
+let finalEventsResult = []
 let continualId;
 const eventIdsContinualIdsMap = new Map();
 const eventDivisionsMap = new Map();
@@ -96,6 +98,13 @@ const eventDivisionsMap = new Map();
     })
   })
 
+  // Process northwest dgc events
+  const processedNwdgcAllEventsMap = processNorthwestDgcEvents(allEventsMap);
+
+  // Process wintertime open events
+  const processedWintertimeAllEventsMap = await processWinterTimeOpenEvents(processedNwdgcAllEventsMap);
+  allEventsMap = processedWintertimeAllEventsMap;
+
   // Separate main events by tier
   const mainEvents = [];
   const copyAllEventsMap = deepCopyMapOfObjects(allEventsMap);
@@ -121,9 +130,9 @@ const eventDivisionsMap = new Map();
       }
     }
   })
-  mainEventsObj.major = [...mainEvents.filter(e => e.tier === 'M')];
-  mainEventsObj.elite = [...mainEvents.filter(e => e.tier === 'NT')];
-  mainEventsObj.others = [...mainEvents.filter(e => e.tier !== 'M' && e.tier !== 'NT')];
+  mainEventsObj.major = mainEvents.filter(e => e.tier === 'M');
+  mainEventsObj.elite = mainEvents.filter(e => e.tier === 'NT');
+  mainEventsObj.others = mainEvents.filter(e => e.tier !== 'M' && e.tier !== 'NT');
 
   // Sort events by name separate by tier
   for (const [tier, mainEvents] of Object.entries(mainEventsObj)) {
@@ -149,6 +158,26 @@ const eventDivisionsMap = new Map();
 
   // Render all events table
   renderTable(mainEventsObj);
+
+  // Check if coming from search page with selected event
+  let selectedId = sessionStorage.getItem('selectedId');
+
+  // If wintertime open event is selected, show wintertime open professional (2801), 
+  // TODO: future fix for search.js to use same process for wintertime open events into professional and amateur 2801 and 2802
+  if (+selectedId === 28) selectedId = 2801;
+
+  if (selectedId) {
+    sessionStorage.removeItem('selectedId');
+
+    let event;
+    for (const [tier, mainEvents] of Object.entries(mainEventsObj)) {
+      event = mainEvents.find(e => e.id === parseInt(selectedId));
+      if (event) break;
+    }
+    handleEventClick(event)
+  }
+
+  window.addEventListener('popstate',  () => window.location.reload());
 
   // // Initialize filter functionality
   populateYearsFilter();
@@ -356,8 +385,10 @@ if (searchForm && searchInput) {
     e.preventDefault();
     const query = searchInput.value.trim();
     if (query) {
+      // Replace old state before redirect
+      history.replaceState(null, '', window.location.origin);
       // Redirect to search page with search query
-      window.location.href = `search.html?q=${encodeURIComponent(query)}`;
+      window.location.href = `${origin}/search.html?q=${encodeURIComponent(query)}`;
     }
   });
 }
@@ -372,6 +403,7 @@ function renderEvent() {
   renderEventDetails(selectedEvent, pastEventsList);
   renderSelectedVizButton();
   renderDivisionsWinner(selectedEventsResult, pastEventsList);
+  activateDivisionWinnerCardSelection();
 }
 
 // --------------------------------------------------------------------------------------------------------------------------
@@ -398,69 +430,78 @@ function renderTable(eventsObject) {
       `;
 
       // Add event listener to the row
-      const row = createClickableRow(rowContent, async () => {
-        // Assign selectedEvent continualId
-        continualId = event.id;
-
-        // Assign selectedEvent
-        selectedEvent = event;
-
-        // Get selectedEvents 
-        const unsortedSelectedEvents = allEventsMap.get(continualId);
-
-        // Gather all pdga_event_id for query additional data (players count and total prize)
-        const pdgaEventIds = unsortedSelectedEvents.map(e => e.pdga_event_id);
-
-        const [additionalData, eventsResult] = await Promise.all([
-          getParticipantsAndPrizesPerYearByPdgaEventIds(pdgaEventIds),
-          getEventsResultByPdgaEventIds(pdgaEventIds),
-        ]);
-
-        // Map to new array
-        const newUnsortedSelectedEvents = [];
-        unsortedSelectedEvents.forEach((event) => {
-          const playersCount =
-            additionalData.find((e) => e.pdga_event_id === event.pdga_event_id)
-              ?.players_count || "N/A";
-          const totalPrize =
-            additionalData.find((e) => e.pdga_event_id === event.pdga_event_id)
-              ?.total_prize || "N/A";
-          newUnsortedSelectedEvents.push({
-            ...event,
-            players_count: playersCount,
-            total_prize: totalPrize,
-          });
-        });
-        pastEventsList = sortingEventsByDate(newUnsortedSelectedEvents);
-
-        const pdgaNumbers = Array.from(
-          new Set(eventsResult.map((e) => +e.pdga_number))
-        );
-
-        const winnersData = await getPlayersByPdgaNumbers(pdgaNumbers);
-
-        eventsResult.forEach((event) => {
-          const player = winnersData.find(
-            (p) => String(p.pdga_number) === String(event.pdga_number)
-          );
-          event.player_name = player
-            ? `${player.first_name} ${player.last_name}`
-            : "N/A";
-        });
-
-        selectedEventsResult = eventsResult;
-
-        renderEvent();
-
-        // Adjust CSS accordingly
-        document.getElementById("past-events-table").style.display = "block";
-        document.getElementById("btn-container").style.display = "flex";
-        document.getElementById("events-table").style.display = "none";
+      const row = document.createElement("tr");
+      row.innerHTML = rowContent;
+      row.addEventListener("click", () => {
+        handleEventClick(event)
       });
 
       tableBody.appendChild(row);
     });
   }
+}
+
+export async function handleEventClick(event) {
+  // Assign selectedEvent continualId
+  continualId = event.id;
+
+  // Assign selectedEvent
+  selectedEvent = event;
+
+  // Get selectedEvents 
+  const unsortedSelectedEvents = allEventsMap.get(continualId);
+
+  // Gather all pdga_event_id for query additional data (players count and total prize)
+  const pdgaEventIds = unsortedSelectedEvents.map(e => e.pdga_event_id);
+
+  const [additionalData, eventsResult] = await Promise.all([
+    getParticipantsAndPrizesPerYearByPdgaEventIds(pdgaEventIds),
+    getEventsResultByPdgaEventIds(pdgaEventIds),
+  ]);
+
+  // Map to new array
+  const newUnsortedSelectedEvents = [];
+  unsortedSelectedEvents.forEach((event) => {
+    const playersCount =
+      additionalData.find((e) => e.pdga_event_id === event.pdga_event_id)
+        ?.players_count || "N/A";
+    const totalPrize =
+      additionalData.find((e) => e.pdga_event_id === event.pdga_event_id)
+        ?.total_prize || "N/A";
+    newUnsortedSelectedEvents.push({
+      ...event,
+      players_count: playersCount,
+      total_prize: totalPrize,
+    });
+  });
+  pastEventsList = sortingEventsByDate(newUnsortedSelectedEvents);
+
+  const pdgaNumbers = Array.from(
+    new Set(eventsResult.map((e) => +e.pdga_number))
+  );
+
+  const winnersData = await getPlayersByPdgaNumbers(pdgaNumbers);
+
+  eventsResult.forEach((event) => {
+    const player = winnersData.find(
+      (p) => String(p.pdga_number) === String(event.pdga_number)
+    );
+    event.player_name = player
+      ? `${player.first_name} ${player.last_name}`
+      : "N/A";
+  });
+
+  selectedEventsResult = eventsResult;
+
+  renderEvent();
+
+  // Adjust CSS accordingly
+  document.getElementById("past-events-table").style.display = "block";
+  document.getElementById("btn-container").style.display = "flex";
+  document.getElementById("events-table").style.display = "none";
+
+  const newPath = `/id/${continualId}`;
+  history.pushState({ state: 'details', id: continualId }, null, newPath);
 }
 
 // --------------------------------------------------------------------------------------------------------------------------
@@ -488,7 +529,31 @@ export function handleVizButtonClick(buttonText) {
       renderDiffRating(continualId);
       break;
 
+    case "Field Size Distribution":
+      renderFieldSizeBoxplot(pastEventsList);
+      break;
+
+    case "Highest Round Rating":
+      renderHighestRoundRating(continualId);
+      break;
+
+    case "Top 5 Divisions Rating":
+      renderTop5DivisionsRating(continualId);
+      break;
+
     default:
       console.error("Unknown visualization button:", buttonText);
   }
 }
+
+export function setFinalEventsResult(result) {
+  finalEventsResult = result;
+};
+
+export function getFinalEventsResult() {
+  return finalEventsResult;
+}
+
+export function getSelectedEventResult() {
+  return selectedEventsResult;
+};

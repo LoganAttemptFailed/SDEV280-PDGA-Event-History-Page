@@ -1,5 +1,5 @@
-import { handleVizButtonClick } from "../script.js";
-import { sortDivisions } from "./functions.js";
+import { getFinalEventsResult, getSelectedEventResult, handleVizButtonClick, setFinalEventsResult } from "../script.js";
+import { getPastDivisionWinners, getReigningWinnersList, mergeEventResultAndDetail, sortDivisions } from "./functions.js";
 import {
   getCurrentPageData,
   getPaginationInfo,
@@ -13,13 +13,6 @@ export function clearTable(tableBodyId) {
   if (tableBody) {
     tableBody.innerHTML = "";
   }
-}
-
-export function createClickableRow(content, clickHandler) {
-  const row = document.createElement("tr");
-  row.innerHTML = content;
-  row.addEventListener("click", clickHandler);
-  return row;
 }
 
 export function fillEmptyRows(
@@ -87,10 +80,19 @@ export function relocatePaginationControls(
 
 export function activateBackToAllEventsBtn() {
   const btn = document.getElementById("all-events-btn");
-  btn.addEventListener("click", () => {
+  const headerBtn = document.getElementById("header-back-btn");
+
+  const backToAllEvents = () => {
     document.getElementById("btn-container").style.display = "none";
+    history.replaceState(null, '', window.location.origin);
     window.location.reload();
-  });
+  };
+
+  btn.addEventListener("click", backToAllEvents);
+
+  if (headerBtn) {
+    headerBtn.addEventListener("click", backToAllEvents);
+  }
 }
 
 export function getTierBadge(tier) {
@@ -171,22 +173,21 @@ export function renderPastEventsTable() {
 
   // Add data rows
   pageData.forEach((item) => {
-    const total_prize =
-      item.total_prize === "N/A"
-        ? "N/A"
-        : `$${(+item.total_prize).toLocaleString()}`;
-
     const rowContent = `
       <td>${item.year}</td>
       <td>${item.event_name}</td>
       <td>${item.start_date}</td>
-      <td>${item.players_count}</td>
-      <td>${total_prize}</td>
+      <td>${item.city}</td>
+      <td>${item.country}</td>
+      <td>${item.tournament_director === '0' ? 'N/A' : item.tournament_director}</td>
     `;
 
-    const row = createClickableRow(rowContent, () => {
+    const row = document.createElement("tr");
+    row.innerHTML = rowContent;
+    row.addEventListener("click", () => {
       window.open(item.website_url, "_blank");
     });
+
     tableBody.appendChild(row);
   });
 
@@ -255,21 +256,39 @@ export function renderEventDetails(selectedEvent, pastEventsList) {
     eventCity.textContent = 'Multiple Locations,\u00A0';
     eventState.textContent = '';
     eventCountry.textContent = selectedEvent.country || "N/A";
+  } else if (selectedEvent.city === 'Multiple Cities' && selectedEvent.state === '') {
+    eventCity.textContent = selectedEvent.city + ',\u00A0';
+    eventState.textContent = '';
+    eventCountry.textContent = selectedEvent.country || "N/A";
+  } else if (selectedEvent.city === 'Multiple Cities' && selectedEvent.state !== '') {
+    eventCity.textContent = '';
+    eventState.textContent = selectedEvent.state + ',\u00A0';
+    eventCountry.textContent = selectedEvent.country || "N/A";
   } else {
     eventCity.textContent = selectedEvent.city + ",\u00A0" || "N/A,\u00A0";
     eventState.textContent = selectedEvent.state
-    ? selectedEvent.state + ",\u00A0"
-    : "";
+      ? selectedEvent.state + ",\u00A0"
+      : "";
     eventCountry.textContent = selectedEvent.country || "N/A";
   }
-    eventDirector.textContent = selectedEvent.tournament_director || "N/A";
+  eventDirector.textContent = selectedEvent.tournament_director || "N/A";
 
-  initPagination(pastEventsList, renderPastEventsTable); 
+  initPagination(pastEventsList, renderPastEventsTable);
 
-  // Smooth scroll to the event section
-  eventSection.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
+  // Show the header back button when viewing an event
+  showHeaderBackButton();
+
+  const OFFSET = 100; // Define your desired offset in pixels (e.g., 100px)
+  // 1. Get the target element's position relative to the viewport
+  const elementPosition = eventSection.getBoundingClientRect().top;
+  // 2. Get the current scroll position
+  const offsetPosition = window.scrollY;
+  // 3. Calculate the new scroll position (Target Position + Current Scroll - Offset)
+  const targetScrollPosition = elementPosition + offsetPosition - OFFSET;
+  // 4. Smoothly scroll to the calculated position
+  window.scrollTo({
+    top: targetScrollPosition,
+    behavior: "smooth"
   });
 }
 
@@ -316,96 +335,29 @@ export function renderDivisionsWinner(eventsResult, pastEventsList) {
   // Get unique divisions and sort them
   const allDivisions = eventsResult.map((item) => item.division);
   const uniqueDivisionsSet = new Set(allDivisions);
-  const divisionList = sortDivisions(Array.from(uniqueDivisionsSet));
+  const divisionList = sortDivisions(Array.from(uniqueDivisionsSet)); // divisionList = ['MPO', 'FPO']
 
   // Merge event details into eventsResult
-  const finalEventsResult = eventsResult.map((result) => {
-    const eventDetail = pastEventsList.find(
-      (event) => event.pdga_event_id === result.pdga_event_id
-    );
-    return {
-      ...result,
-      ...eventDetail,
-    };
-  });
+  const finalEventsResult = mergeEventResultAndDetail(eventsResult, pastEventsList);
+  setFinalEventsResult(finalEventsResult);
 
-  // Loop through divisions and create cards
-  const totalCards = divisionList.length;
-  let tableHeight = 0;
+  // Loop through divisions and create 2 cards
+  let tableHeight = 0; // to make table smaller when there are less winners to display in the table
 
-  for (let i = 0; i < totalCards; i++) {
-    // Get reigning winners
-    const divisionWinnerList = [...eventsResult].filter(
-      (e) => e.division === divisionList[i]
-    );
-
-    const reigningWinnersMap = new Map();
-
-    divisionWinnerList.forEach((event) => {
-      const winner = event.player_name?.trim() || "N/A";
-      const pdga = +event.pdga_number || 0;
-      const prize = +event.cash || 0;
-      const key = `${winner}___${pdga}`; // Use PDGA # as tiebreaker to avoid name collisions
-
-      if (reigningWinnersMap.has(key)) {
-        const existing = reigningWinnersMap.get(key);
-        existing.winCount += 1;
-        existing.prizeEarned += prize;
-      } else {
-        reigningWinnersMap.set(key, {
-          division: event.division,
-          winner,
-          winCount: 1,
-          pdgaNumber: pdga,
-          prizeEarned: prize,
-        });
-      }
-    });
-
-    // Convert to array (and sort by wins)
-    const reigningWinners = Array.from(reigningWinnersMap.values());
-    reigningWinners.sort((a, b) => b.winCount - a.winCount);
-
-    // Set table height for champions table
-    if (i === 0 && tableHeight === 0) {
-      tableHeight = (reigningWinners.length * 33) + 48;
-    } else if (i === 1) {
-      const newHeight = (reigningWinners.length * 33) + 48;
-      tableHeight = tableHeight > newHeight ?
-        newHeight : tableHeight;
-    }
-
-    // Assign ranks with handling ties
-    const firstRankWinCount = reigningWinners[0]?.winCount || "N/A";
-    let currentWinCount = firstRankWinCount;
-    let currentRank = 1;
-    reigningWinners.forEach((dw) => {
-      if (dw.winCount === currentWinCount) {
-        dw.rank = currentRank;
-      } else if (dw.winCount < currentWinCount) {
-        currentRank += 1;
-        dw.rank = currentRank;
-        currentWinCount = dw.winCount;
-      }
-    });
-
-    // Format ranks
-    reigningWinners.forEach((dw) => {
-      if (dw.rank === 1) {
-        dw.rank = "1st";
-      } else if (dw.rank === 2) {
-        dw.rank = "2nd";
-      } else if (dw.rank === 3) {
-        dw.rank = "3rd";
-      } else {
-        dw.rank = dw.rank + "th";
-      }
-    });
+  for (let i = 0; i < Math.min(2, divisionList.length); i++) {
+    let isLeftCard;
+    if (i === 0) isLeftCard = true;
 
     // Create card content
     const cardContent = `
     <div class="division-card">
-            <h2>${divisionList[i]}</h2>
+            <div class="filter-item">
+              <label for="division">Select Division</label>
+              <select id="${isLeftCard ? 'left' : 'right'}-division">
+                  <option value="">Division</option>
+              </select>
+            </div>
+            <h2 id="${isLeftCard ? 'left' : 'right'}-division-h2">${divisionList[i]}</h2>
             <h4>All-Time Champions</h4>
             <div class='divisions-table-wrapper'>
               <table>
@@ -417,7 +369,7 @@ export function renderDivisionsWinner(eventsResult, pastEventsList) {
                     <th>Total Prize Earned</th>
                   </tr>
                 </thead>
-                <tbody id="${divisionList[i]}-champions">
+                <tbody id="${isLeftCard ? 'left' : 'right'}-champions">
                 </tbody>
               </table>
             </div>
@@ -432,7 +384,7 @@ export function renderDivisionsWinner(eventsResult, pastEventsList) {
                     <th>Prize</th>
                   </tr>
                 </thead>
-                <tbody id="past-${divisionList[i]}-winners">
+                <tbody id="past-${isLeftCard ? 'left' : 'right'}-winners">
                 </tbody>
               </table>
             </div>  
@@ -441,59 +393,27 @@ export function renderDivisionsWinner(eventsResult, pastEventsList) {
 
     section.innerHTML += cardContent;
 
-    // Populate all-time champions table
-    const championsTBody = document.getElementById(
-      `${divisionList[i]}-champions`
-    );
+    // Populate division options in dropdown list
+    let selectedDivisionElement = document.getElementById(isLeftCard ? 'left-division' : 'right-division');
+    if (selectedDivisionElement) {
+      selectedDivisionElement.innerHTML = '';
+      for (let j = 0; j < divisionList.length; j++) {
+        selectedDivisionElement.innerHTML += `<option value="${divisionList[j]}">${divisionList[j]}</option>`;
+      };
+      selectedDivisionElement.value = divisionList[i];
+    };
 
-    if (championsTBody && reigningWinners?.length > 0) {
-      const rows = reigningWinners
-        .map((winner) => {
-          const prizes = winner.prizeEarned ?? winner.prize ?? 0;
-          return `
-            <tr data-division="${divisionList[i]}" data-winner="${winner.winner
-            }">
-              <td>${winner.rank || "-"}</td>
-              <td>${winner.winner}</td>
-              <td>${winner.winCount || 0}</td>
-              <td>$${prizes.toLocaleString()}</td>
-            </tr>
-          `.trim();
-        })
-        .join("");
-
-      championsTBody.insertAdjacentHTML("beforeend", rows);
-    }
+    // Get sorted reigningWinners
+    const { reigningWinners, divisionTableHeight } = getReigningWinnersList(eventsResult, divisionList[i], i, tableHeight);
 
     // Get past events division winners
-    const pastDivisionWinners = finalEventsResult.filter(
-      (fe) => fe.division === divisionList[i]
-    );
-    pastDivisionWinners.sort((a, b) => b.year - a.year);
+    const pastDivisionWinners = getPastDivisionWinners(divisionList[i], finalEventsResult);
 
-    // Populate recent winners table
-    const recentWinnersTBody = document.getElementById(
-      `past-${divisionList[i]}-winners`
-    );
+    // Set table height
+    tableHeight = divisionTableHeight;
 
-    if (recentWinnersTBody && pastDivisionWinners?.length > 0) {
-      const rows = pastDivisionWinners
-        .map((event) => {
-          return `
-            <tr data-division="${divisionList[i]}" data-past-winner="${event.player_name || 'N/A'
-            }">
-              <td>${event.year || "N/A"}</td>
-              <td>${event.player_name || 'N/A'}</td>
-              <td>${event.total_score || 0}</td>
-              <td>$${(+event.cash).toLocaleString() || $0}</td>
-            </tr>
-          `.trim();
-        })
-        .join("");
-
-      recentWinnersTBody.insertAdjacentHTML("beforeend", rows);
-    }
-  }
+    populateDivisionsWinnersTable(divisionList[i], reigningWinners, pastDivisionWinners, isLeftCard);
+  };
 
   const allTables = document.querySelectorAll('.divisions-table-wrapper');
   allTables.forEach(wrapper => {
@@ -504,5 +424,97 @@ export function renderDivisionsWinner(eventsResult, pastEventsList) {
   if (allDivisionsCard.length === 1) {
     document.getElementById('division-section').style.gridTemplateColumns = 'repeat(4, 1fr)';
     allDivisionsCard[0].style.gridColumn = '2/4';
+  };
+};
+
+export function populateDivisionsWinnersTable(division, reigningWinners, pastWinners, isLeftCard) {
+  // Populate all-time champions table
+  const championsTBody = document.getElementById(isLeftCard ? 'left-champions' : 'right-champions');
+
+  championsTBody.innerHTML = '';
+
+  if (championsTBody && reigningWinners?.length > 0) {
+    const rows = reigningWinners
+      .map((winner) => {
+        const prizes = winner.prizeEarned ?? winner.prize ?? 0;
+        return `
+            <tr data-division="${division}" data-winner="${winner.winner}">
+              <td>${winner.rank || "-"}</td>
+              <td>${winner.winner}</td>
+              <td>${winner.winCount || 0}</td>
+              <td>$${prizes.toLocaleString()}</td>
+            </tr>
+          `.trim();
+      })
+      .join("");
+
+    championsTBody.insertAdjacentHTML("beforeend", rows);
+  }
+
+  // Populate recent winners table
+  const recentWinnersTBody = document.getElementById(isLeftCard ? 'past-left-winners' : 'past-right-winners');
+
+  recentWinnersTBody.innerHTML = '';
+
+  if (recentWinnersTBody && pastWinners?.length > 0) {
+    const rows = pastWinners
+      .map((event) => {
+        return `
+            <tr data-division="${division}" data-past-winner="${event.player_name || 'N/A'
+          }">
+              <td>${event.year || "N/A"}</td>
+              <td>${event.player_name || 'N/A'}</td>
+              <td>${event.total_score || 0}</td>
+              <td>$${(+event.cash).toLocaleString() || $0}</td>
+            </tr>
+          `.trim();
+      })
+      .join("");
+
+    recentWinnersTBody.insertAdjacentHTML("beforeend", rows);
+  };
+};
+
+export function showHeaderBackButton() {
+  const headerBtn = document.getElementById("header-back-btn");
+  if (headerBtn) {
+    headerBtn.classList.remove("hidden");
   }
 }
+
+export function hideHeaderBackButton() {
+  const headerBtn = document.getElementById("header-back-btn");
+  if (headerBtn) {
+    headerBtn.classList.add("hidden");
+  }
+}
+
+export function activateDivisionWinnerCardSelection() {
+  const leftCardSelectedDivision = document.getElementById('left-division');
+  const rightCardSelectedDivision = document.getElementById('right-division');
+
+  const eventsResult = getSelectedEventResult();
+  const finalEventsResult = getFinalEventsResult();
+
+  function getWinnersAndPopulate(division, isLeftCard) {
+    document.getElementById(isLeftCard ? 'left-division-h2' : 'right-division-h2').textContent = division;
+
+    // Get sorted reigningWinners
+    const { reigningWinners } = getReigningWinnersList(eventsResult, division, 0, 0);
+
+    // Get past events division winners
+    const pastDivisionWinners = getPastDivisionWinners(division, finalEventsResult);
+
+    populateDivisionsWinnersTable(division, reigningWinners, pastDivisionWinners, isLeftCard);
+  };
+
+  leftCardSelectedDivision.addEventListener("change", () => {
+    const division = leftCardSelectedDivision.value;
+    getWinnersAndPopulate(division, true)
+  });
+
+  rightCardSelectedDivision.addEventListener("change", () => {
+    const division = rightCardSelectedDivision.value;
+    getWinnersAndPopulate(division, false)
+  });
+};

@@ -386,10 +386,10 @@ function renderTable() {
             <td>${item.country || 'N/A'}</td>
         `;
         
-        row.addEventListener('click', () => {
-            selectedEvent = item;
-            continualId = item.id;
-            console.log('Event clicked:', item.name);
+        row.addEventListener('click', async () => {
+            // Store the event in sessionStorage and redirect to index.html
+            sessionStorage.setItem('selectedId', item.id);
+            window.location.href = 'index.html';
         });
         
         tableBody.appendChild(row);

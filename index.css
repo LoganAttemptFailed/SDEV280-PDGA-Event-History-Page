@@ -16,6 +16,11 @@ header {
   color: white;
   padding: 15px 0;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
 }
 
 .header-content {
@@ -36,6 +41,33 @@ header {
 
 .logo>img {
   height: 100%;
+}
+
+/* Header Back Button */
+.header-back-button {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: white;
+  color: #0066cc;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.header-back-button:hover {
+  background-color: #f0f7ff;
+  transform: translateX(-50%) translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.header-back-button.hidden {
+  display: none;
 }
 
 nav {
@@ -86,7 +118,7 @@ nav a:hover {
 /* Main Container */
 .container {
   max-width: 1200px;
-  margin: 30px auto;
+  margin: 100px auto 30px;
   padding: 0 20px;
 }
 
@@ -134,11 +166,18 @@ nav a:hover {
   margin-bottom: 20px;
 }
 
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.filter-container {
+  display: flex;
+  justify-content: stretch;
   gap: 20px;
 }
+
+.filter-item:first-of-type,
+.filter-item:nth-of-type(2),
+.filter-item:nth-of-type(3) {
+  flex: 1;
+}
+
 
 .filter-item label {
   display: block;
@@ -147,6 +186,8 @@ nav a:hover {
   color: #333;
   font-size: 14px;
 }
+
+
 
 .filter-item select {
   width: 100%;
@@ -694,27 +735,31 @@ tbody tr.empty-row:hover::before {
   display: none;
 }
 
+.past-events-table th,
+.past-events-table td {
+  text-align: center;
+}
+
 .past-events-table th:first-child,
 .past-events-table td:first-child {
   width: 80px;
+  text-align: left;
 }
 
 .past-events-table th:nth-child(2),
 .past-events-table td:nth-child(2) {
-  width: 550px;
+  width: 500px;
+  text-align: left;
 }
 
 .past-events-table th:nth-child(3),
-.past-events-table td:nth-child(3),
-.past-events-table th:nth-child(4),
-.past-events-table td:nth-child(4) {
-  text-align: center;
+.past-events-table td:nth-child(3) {
+  width: 120px;
 }
 
 .past-events-table th:last-child,
 .past-events-table td:last-child {
-  width: 100px;
-  text-align: right;
+  width: 180px;
 }
 
 .btn-container {
@@ -817,6 +862,25 @@ tbody tr.empty-row:hover::before {
 
 .division-card {
   padding-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.division-card .filter-item {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  justify-content: center;
+}
+
+.division-card .filter-item label {
+  margin-bottom: 0px;
+  align-self: center;
+  font-size: 16px;
+}
+
+.division-card .filter-item select {
+  width: 200px;
 }
 
 .division-card th:last-of-type,
@@ -840,9 +904,6 @@ tbody tr.empty-row:hover::before {
   text-align: center;
 }
 
-.extra-one {
-  grid-column: 2 / 3;
-}
 
 .divisions-table-wrapper table {
   margin-bottom: 0;
@@ -852,42 +913,4 @@ tbody tr.empty-row:hover::before {
   background-color: white;
   transform: scale(1.00);
   cursor: initial;
-}
-
-/* Sortable Table Headers */
-thead th[data-sort] {
-  cursor: pointer;
-  user-select: none;
-  position: relative;
-  padding-right: 25px;
-}
-
-thead th[data-sort]:hover {
-  background-color: #0052a3;
-}
-
-.sort-indicator {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 10px;
-  opacity: 0.5;
-}
-
-.sort-indicator::before {
-  content: "▼▲";
-  letter-spacing: -2px;
-}
-
-th[data-sort].sort-asc .sort-indicator::before {
-  content: "▲";
-  opacity: 1;
-  font-size: 12px;
-}
-
-th[data-sort].sort-desc .sort-indicator::before {
-  content: "▼";
-  opacity: 1;
-  font-size: 12px;
 }

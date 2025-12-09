@@ -19,6 +19,47 @@ export async function getAllRecentEventsContinualList() {
 //                                               VISUALIZATION SECTION QUERIES
 //
 // --------------------------------------------------------------------------------------------------------------------------
+
+
+export async function getContinualEventsTop5DivisionsRating(continualId) {
+  try {
+    const url = `https://coderelic.greenriverdev.com/query.php?queryType=getContinualEventsTop5DivisionsRating&continualId=${continualId}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching top 5 divisions rating data:", error);
+    return [];
+  }
+}
+
+
+
+
+
+
+export async function getContinualEventsHighestRoundRating(continualId) {
+  const url = `https://coderelic.greenriverdev.com/query.php?queryType=getContinualEventsHighestRoundRating&continualId=${continualId}`;
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching highest round rating data:", error);
+    return [];
+  }
+}
+
+
+
 export async function getContinualEventsParticipants(continualId) {
   try {
     const url = `https://coderelic.greenriverdev.com/query.php?queryType=getContinualEventsParticipants&continualId=${continualId}`;
@@ -269,3 +310,19 @@ export async function getUniqueEventDivisions() {
     console.error("Error:", error);
   }
 }
+
+export async function getDivisionsByPdgaEventId(pdgaEventId) {
+  try {
+    const url = `https://coderelic.greenriverdev.com/query_sprint3.php?queryType=getDivisionsByPdgaEventId&pdgaEventId=${pdgaEventId}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error:", error);
+    return [];
+  };
+};

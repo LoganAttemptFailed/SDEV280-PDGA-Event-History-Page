@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,7 +7,6 @@
     <link rel="icon" type="image/x-icon" href="./assets/favicon.png">
     <link rel="stylesheet" href="index.css">
 </head>
-
 <body>
     <!-- Header -->
     <header>
@@ -19,25 +17,28 @@
             <nav>
                 <div class="event-search">
                     <form id="searchForm">
-                        <input type="text" id="searchInput" placeholder="Search events...">
+                        <input
+                            type="text"
+                            id="searchInput"
+                            placeholder="Search events..."
+                        >
                     </form>
                 </div>
             </nav>
         </div>
     </header>
-
+    
     <!-- Search Results Header -->
     <div class="search-results-header" style="padding: 40px 20px; background: #f5f5f5;">
         <div class="container" style="max-width: 1200px; margin: 0 auto;">
             <h1>Search Results for "<span id="searchQueryDisplay"></span>"</h1>
             <p>Found <span id="totalResults">0</span> events</p>
-            <button id="backToEvents"
-                style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+            <button id="backToEvents" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">
                 ← Back to All Events
             </button>
         </div>
     </div>
-
+    
     <!-- Results Table Section -->
     <section class="events-section" style="padding: 40px 20px;">
         <div class="container" style="max-width: 1200px; margin: 0 auto;">
@@ -58,13 +59,11 @@
                     </tbody>
                 </table>
             </div>
-
+            
             <!-- Pagination Controls -->
-            <div class="pagination-controls"
-                style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div class="pagination-controls" style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
                 <div class="pagination-info">
-                    Showing <span id="startEntry">0</span> to <span id="endEntry">0</span> of <span
-                        id="totalEntries">0</span> entries
+                    Showing <span id="startEntry">0</span> to <span id="endEntry">0</span> of <span id="totalEntries">0</span> entries
                 </div>
                 <div class="pagination-buttons" style="display: flex; gap: 10px;">
                     <button id="firstBtn" class="pagination-btn">First</button>
@@ -76,15 +75,14 @@
             </div>
         </div>
     </section>
-
+    
     <!-- Visualization Section -->
     <section id="visualization-section" style="display: none;">
         <!-- Your existing visualization code -->
     </section>
-
+    
     <!-- Scripts at the end of body -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script type="module" src="search.js"></script>
 </body>
-
 </html>
